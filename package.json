@@ -1,0 +1,47 @@
+{
+  "name": "geometry-web-worker",
+  "version": "0.0.1",
+  "description": "Provides geometry processing tools in a web worker",
+  "main": "dist/geometry-web-worker.js",
+  "typings": "dist/geometry-web-worker.d.ts",
+  "scripts": {
+    "build": "node scripts/build.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OL-PlugMap/geometry-web-worker.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/OL-PlugMap/geometry-web-worker/issues"
+  },
+  "homepage": "https://github.com/OL-PlugMap/geometry-web-worker#readme",
+  "devDependencies": {
+    "@turf/area": "^6.3.0",
+    "@turf/boolean-within": "^6.3.0",
+    "@turf/buffer": "^6.3.0",
+    "@turf/circle": "^6.3.0",
+    "@turf/difference": "^6.3.0",
+    "@turf/helpers": "^6.3.0",
+    "@turf/projection": "^6.3.0",
+    "@turf/simplify": "^6.3.0",
+    "@turf/truncate": "^6.3.0",
+    "@turf/union": "^6.3.0",
+    "@turf/unkink-polygon": "^6.3.0",
+    "chalk": "^4.1.0",
+    "copy-webpack-plugin": "^8.1.1",
+    "fs-extra": "^9.1.0",
+    "ol": "^6.5.0",
+    "react-dev-utils": "^11.0.4",
+    "shpjs": "^3.6.2",
+    "sw-precache-webpack-plugin": "^1.0.0",
+    "text-encoding": "^0.7.0",
+    "uglifyjs-webpack-plugin": "^2.2.0",
+    "webpack": "^5.28.0",
+    "webpack-manifest-plugin": "^3.1.0",
+    "wellknown": "^0.5.0",
+    "workbox-webpack-plugin": "^6.1.2",
+    "worker-loader": "^3.0.8"
+  }
+}
