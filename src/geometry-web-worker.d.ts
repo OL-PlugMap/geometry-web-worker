@@ -11,3 +11,5 @@ export class geometry_web_worker {
   export default geometry_web_worker;
 
   export async function promptAndProcessShapefile() : any;
+
+  export async function flattenShapes(featureCollection : any | any[]) : any;

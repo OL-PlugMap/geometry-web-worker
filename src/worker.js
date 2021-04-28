@@ -5,6 +5,12 @@ import { toMercator } from "@turf/projection";
 import * as shp from "../node_modules/shpjs/dist/shp";
 
 
+import simplify from "@turf/simplify"
+import unkinkPolygon from "@turf/unkink-polygon";
+import booleanWithin from "@turf/boolean-within";
+import union from "@turf/union";
+import difference from "@turf/difference";
+import buffer from "@turf/buffer";
 
 
 
@@ -22,10 +28,7 @@ import * as shp from "../node_modules/shpjs/dist/shp";
 
 
 
-const log = msg => {
-  postMessage({ type: "log", "msg": msg });
-}
-
+// This is our main message handling function. It should redirect all the messages to their appropriate functions
 onmessage = e => 
 {
   try
@@ -35,127 +38,15 @@ onmessage = e =>
     {
       case "processUpload": {
         log("Process Upload Top");
-        try {
-          let maxTries = 10;
-          if(msg.files)
-          {
-            for (var i = 0; i < msg.files.length; i++)
-            {
-              log("Processing file " + i );
-              var file = msg.files[i];
-
-              const reader = new FileReader();
-              reader.addEventListener(
-                "load",
-                evt => {
-                  postMessage({ type: "processingFile", id: msg.id });
-                  
-                  postMessage({ type: "processingFeatures", id: msg.id });
-
-                  shp(evt.target.result).then(
-                    geojsons => {
-
-                      if(!Array.isArray(geojsons))
-                        geojsons = [ geojsons ];
-
-                    
-                      let res = [];
-                      for(let geojson of geojsons)  
-                      {
-                        let isGeographic = isGeometryGeographicHack(geojson);
-                        if (isGeographic) {
-                          geojson = toMercator(geojson);
-                        }
-                        
-                        for(var feat of geojson.features)
-                        {
-                          res.push(
-                            {
-                              feature: feat
-                            }
-                          )
-                        }
-                      }
-                      
-                      postMessage({ type: "uploadProcessed", features: res.map(a => a.feature)});
-
-                      //close();
-                      reader.abort();
-
-                    },
-                    reason => {
-                      maxTries --;
-                      let msg = null; //reason.message;
-                      var fatal = true;
-                      switch (reason.message) {
-                        case "forgot to pass buffer":
-                          msg = [ "Could not open the file. Is it corrupt?" ] //"Shapefile reader needs a valid ArrayBuffer to read from.";
-                          break;
-                        case "I don't know that shp type":
-                          msg = [`Tried to parse an invalid or unsupported shape type.`, `Please upload a shapefile with only features of the supported types:`, `Point, MultiPoint, LineString, MultiLineString, Polygon, or MultiPolygon.` ];
-                          break;
-                        case "no layers founds":
-                          msg = [`The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`];
-                          break;
-                        case "Can't find end of central directory : is this a zip file ? If it is, see http://stuk.github.io/jszip/documentation/howto/read_zip.html":
-                          msg = [`This file does not look like a zip file or it is corrupt.`,  `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
-                          break;
-                        case "SyntaxError":
-                            msg = [`This file does not look like a zip file or it is corrupt.`,  `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
-                            break;
-                        case "Failed to execute 'open' on 'XMLHttpRequest': Invalid URL":
-                          //shp.js causes this for whatever reason
-
-                          fatal = false;
-                          break;
-                        default:
-                          debugger;
-                          msg = [`Unable to parse the file. Unknown Error.`, `Additional information: ` + reason.message ];
-                          fatal = false;
-                          break;
-                      }
-                      //TODO: Return the error to elm land here
-                      if(maxTries == 0)
-                      {  msg = [`Exceeded maximum number of errors while parsing this file.`, `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
-                        fatal = true;
-                      }
-
-                      //if(msg)
-                      postMessage({ type: "uploadError", id: msg.id, error: msg || reason, fatal: fatal });
-
-                      if(fatal)
-                        reader.abort();
-                    }
-                  )
-                  .catch((error) => {
-                    postMessage({ type: "uploadError", error: error, fatal: true });
-                  })
-                    
-                  
-                },
-                err =>
-                {
-                  postMessage({ type: "uploadError", error: err, fatal: true });
-                  reader.abort();
-                }
-              );
-              
-              postMessage({ type: "openingFile", id: msg.id });
-              reader.readAsArrayBuffer(file);
-              //reader.readAsText(file);
-            }
-          }
-          else
-          {
-            postMessage({ type: "log", "msg": "Message didnt have any files!" });
-          }
-        } catch (err) {
-          debugger;
-          postMessage({ type: "log", "msg": "Encountered an error", error: err });
-        }
-        postMessage({ type: "log", "msg": "Process Upload Bottom" });
+        processShapefileMsg(msg);
+        log("Process Upload Bottom" );
       } break;
       
+      case "flatten": {
+        log("Flatten Shapes Top");
+        processFlattenShapeMsg(msg);
+        log("Flatten Shapes Bottom");
+      }; break;
 
       default: {
         //Do nothing
@@ -164,10 +55,229 @@ onmessage = e =>
   }
   catch(EXCEPT)
   {
-    debugger;
-    //close();
+    error("Unhandled onmessage error", EXCEPT)
   }
 };
+
+
+
+
+
+const log = msg => {
+  postMessage({ type: "log", "msg": msg });
+}
+
+const error = (msg,err) => {
+  postMessage({ type: "error", "msg": msg, "error": err });
+}
+
+const processShapefileMsg = msg => {
+  try {
+    let maxTries = 10;
+    if(msg.files)
+    {
+      for (var i = 0; i < msg.files.length; i++)
+      {
+        log("Processing file " + i );
+        var file = msg.files[i];
+
+        const reader = new FileReader();
+        reader.addEventListener(
+          "load",
+          evt => {
+            postMessage({ type: "processingFile", id: msg.id });
+            
+            postMessage({ type: "processingFeatures", id: msg.id });
+
+            shp(evt.target.result).then(
+              geojsons => {
+
+                if(!Array.isArray(geojsons))
+                  geojsons = [ geojsons ];
+
+              
+                let res = [];
+                for(let geojson of geojsons)  
+                {
+                  let isGeographic = isGeometryGeographicHack(geojson);
+                  if (isGeographic) {
+                    geojson = toMercator(geojson);
+                  }
+                  
+                  for(var feat of geojson.features)
+                  {
+                    res.push(
+                      {
+                        feature: feat
+                      }
+                    )
+                  }
+                }
+                
+                postMessage({ type: "uploadProcessed", features: res.map(a => a.feature)});
+
+                //close();
+                reader.abort();
+
+              },
+              reason => {
+                maxTries --;
+                let msg = null; //reason.message;
+                var fatal = true;
+                switch (reason.message) {
+                  case "forgot to pass buffer":
+                    msg = [ "Could not open the file. Is it corrupt?" ] //"Shapefile reader needs a valid ArrayBuffer to read from.";
+                    break;
+                  case "I don't know that shp type":
+                    msg = [`Tried to parse an invalid or unsupported shape type.`, `Please upload a shapefile with only features of the supported types:`, `Point, MultiPoint, LineString, MultiLineString, Polygon, or MultiPolygon.` ];
+                    break;
+                  case "no layers founds":
+                    msg = [`The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`];
+                    break;
+                  case "Can't find end of central directory : is this a zip file ? If it is, see http://stuk.github.io/jszip/documentation/howto/read_zip.html":
+                    msg = [`This file does not look like a zip file or it is corrupt.`,  `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
+                    break;
+                  case "SyntaxError":
+                      msg = [`This file does not look like a zip file or it is corrupt.`,  `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
+                      break;
+                  case "Failed to execute 'open' on 'XMLHttpRequest': Invalid URL":
+                    //shp.js causes this for whatever reason
+
+                    fatal = false;
+                    break;
+                  default:
+                    debugger;
+                    msg = [`Unable to parse the file. Unknown Error.`, `Additional information: ` + reason.message ];
+                    fatal = false;
+                    break;
+                }
+                //TODO: Return the error to elm land here
+                if(maxTries == 0)
+                {  msg = [`Exceeded maximum number of errors while parsing this file.`, `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
+                  fatal = true;
+                }
+
+                //if(msg)
+                postMessage({ type: "uploadError", id: msg.id, error: msg || reason, fatal: fatal });
+
+                if(fatal)
+                  reader.abort();
+              }
+            )
+            .catch((error) => {
+              postMessage({ type: "uploadError", error: error, fatal: true });
+            })
+              
+            
+          },
+          err =>
+          {
+            postMessage({ type: "uploadError", error: err, fatal: true });
+            reader.abort();
+          }
+        );
+        
+        postMessage({ type: "openingFile", id: msg.id });
+        reader.readAsArrayBuffer(file);
+        //reader.readAsText(file);
+      }
+    }
+    else
+    {
+      log("Message didnt have any files!");
+    }
+  } catch (err) {
+    debugger;
+    error("Unhandled error in upload shapefile", err );
+  }
+}
+
+const flattened = (id, shape, source) => {
+  postMessage({
+    type: "flattened",
+    id: id,
+    geoJSON: shape,
+    source: source
+  });
+}
+
+const defaultFlattenShapeParams = {
+  vertexCutoff: 5000
+}
+
+// Params are optional
+// shapes is an array of geojson feature
+
+const processFlattenShapeMsg = msg => {
+  
+  log("Getting the params")
+
+  let params = msg.params || defaultFlattenShapeParams;
+
+  let shapes = msg.shapes;
+
+  if(!Array.isArray(shapes))
+  {
+    if(shapes.type == "FeatureCollection")
+    {
+      shapes = shapes.features;
+    }
+  }
+
+  if(!Array.isArray(shapes))
+  {
+    error("Passed in param was not an array of features or a feature collection. Cannot process", shapes);
+  }
+
+  let flat = null;
+          
+  if(shapes.length > 1) //If we have more than one feature, merge it
+  {
+    log(`Processing ${shapes.length} shapes`)
+    let featsToMerge = [];
+
+    
+    for(var f of shapes)
+    {
+      log(`Processing ${f}`);
+      if (f.geometry.type === 'MultiPolygon') {
+        for(var r of f.geometry.coordinates)
+        {
+          let f = polygon(r)
+          f = simplifyIfGreaterThan(params.vertexCutoff, f, 50, 1, 2);
+          featsToMerge.push(f)
+        }
+      } else {
+        f = simplifyIfGreaterThan(params.vertexCutoff, f, 50, 1, 2);
+        featsToMerge.push(f);
+      }
+    }
+
+    
+    log("Merging shapes")
+    flat = mergeFeatures(featsToMerge, params, false);
+  }
+  else if(shapes.length > 0)
+  {
+    flat = shapes[0]
+  }
+
+  if(!flat)
+  {
+    log("Didnt get a flat shape :(")
+    flattened(msg.id, null, msg.source);
+  }
+  else
+  {
+
+    log("Simplifying the flattened area");
+    flat = simplifyIfGreaterThan(params.vertexCutoff, flat, 50, 1, 2);
+    
+    log("Returning flat shape")
+    flattened(msg.id, flat, msg.source);
+        
+  }
+}
 
 function isGeometryGeographicHack(geojson) {
   switch (geojson.features[0].geometry.type) {
@@ -213,3 +323,128 @@ function isCoordinateGeographicHack(x) {
   let value = Math.abs(x);
   return value > -10000 && value < 10000;
 }
+
+
+
+const POINT = "Point";
+const LINE = "LineString";
+const POLYGON = "Polygon";
+const MULTI_POINT = "MultiPoint";
+const MULTI_LINE = "MultiLineString";
+const MULTI_POLYGON = "MultiPolygon";
+const CIRCLE = "Circle";
+
+function simplifyIfGreaterThan(limit, geojson, itr, tol, tolIncr, lastCount, dupeCountCount) {
+  
+  if (!limit) {
+    limit = 1000;
+  }
+
+  if(itr == undefined)
+    itr = 100;
+
+  if(tol == undefined)
+    tol = 0.1;
+  
+  if(tolIncr == undefined)
+    tolIncr = 0.1;
+
+  if(itr == 0)
+    return geojson;
+
+
+  let verticeCount;
+  switch (geojson.geometry.type) {
+    case POLYGON:
+      verticeCount = geojson.geometry.coordinates[0].length;
+      break;
+
+    case MULTI_POLYGON:
+      verticeCount = 0;
+      for (let geo of geojson.geometry.coordinates) {
+        for (let coords of geo) {
+          verticeCount += coords.length;
+        }
+      }
+      break;
+
+    default:
+      verticeCount = 0;
+      break;
+  }
+
+  if(lastCount == undefined)
+    lastCount = 9999999999;
+
+  if(lastCount == verticeCount)
+  {
+    
+    if(dupeCountCount == undefined)
+      dupeCountCount = 0;
+    dupeCountCount ++;
+
+    if(dupeCountCount > 3) //If we have had the same count for the last three attempts were probably not going to reduce anumore
+      return geojson;
+  }
+  else
+  {
+    dupeCountCount = undefined;
+  }
+
+  if (verticeCount >= limit) {
+    try
+    {
+      return simplifyIfGreaterThan(limit, simplify(geojson, { tolerance: tol }), itr - 1, tol * tolIncr, tolIncr, verticeCount, dupeCountCount);
+    }
+    catch(ex) {
+      return geojson;
+    }
+  }
+  else
+  {
+    return geojson;
+  }
+}
+
+
+function mergeFeatures(features, skipRemove) {
+  if (!features || !features.length) return null;
+
+  if (features.length == 1) {
+    return skipRemove ? features[0] : removeIntersections(features[0]).features[0]; ; //Union one feature is one feature
+  }
+  let hb = features.shift();
+  let head = skipRemove ? hb : removeIntersections(hb).features[0];
+  if(!head)
+    head = hb;
+
+  //head = this.removeIntersections(head).features();
+
+  for (let feature of features) {
+    var uk_feature = skipRemove ? feature : removeIntersections(feature).features[0];
+    try
+    {
+      head = union(head, uk_feature);
+    } catch(ex)
+    {
+      debugger;
+      try
+      {
+        let f1 = buffer(head,0.1);
+        let f2 = buffer(uk_feature,0.1);
+        head = union(f1, f2);
+      }
+      catch(ex2)
+      {
+        debugger;
+        //Dunno what to do here
+        // console.warn("Unable to merge features");
+        // console.warn(ex)
+        // console.warn(ex2)
+      }
+    }
+  }
+
+  return head;
+}
+

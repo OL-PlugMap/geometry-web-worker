@@ -7,6 +7,12 @@ export async function processShapefile(element) {
     return window.workerHandler.startProcessingShapefile(element);
 }
 
+export async function flattenShapes(shapes) {
+    console.log("Flattening Shapes", shapes)
+    initWorkerHandler();
+    return window.workerHandler.startFlatteningShapes(shapes);
+}
+
 export async function promptAndProcessShapefile() {
     const elment = document.createElement("input");
     elment.type = "file";
@@ -27,6 +33,8 @@ export async function promptAndProcessShapefile() {
 
     return prom;
 }
+
+
 
 function wrapPromise() {
     let res, rej;
@@ -69,6 +77,7 @@ class workerHandler {
         this.ready = false;
 
         this.uploadPromise = null;
+        this.flattenedPromise = null;
 
         this.debug = true;
         console.log("Initialized")
@@ -93,6 +102,11 @@ class workerHandler {
             case "uploadError": {
                 console.error("Upload errored", e.data.error);
                 this.uploadPromise.reject(e.data.error);
+            }
+
+            case "flattened": {
+                console.log("Flattened")
+                this.flattenedPromise.resolve(e.data.geoJSON);
             }
 
             case "log": {
@@ -124,5 +138,19 @@ class workerHandler {
           });
 
         return this.uploadPromise;
+    }
+
+    //This tells the web worker to start flattening the passed in shapes
+    //The parameter element should be an array of shapes in geojson
+    async startFlatteningShapes(shapes) {
+        console.log("Processing things", shapes)
+        this.flattenedPromise = wrapPromise();
+
+        this.worker.postMessage({
+            type: "flatten",
+            shapes: shapes
+          });
+
+        return this.flattenedPromise;
     }
 }
