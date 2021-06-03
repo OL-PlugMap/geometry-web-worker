@@ -1,6 +1,6 @@
 {
   "name": "geometry-web-worker",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Provides geometry processing tools in a web worker",
   "main": "dist/geometry-web-worker.js",
   "typings": "dist/geometry-web-worker.d.ts",
