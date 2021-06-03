@@ -50,11 +50,26 @@ import { promptAndProcessShapefile } from 'geometry-web-worker'
 
 promptAndProcessShapefile().then(features => 
     { 
-        //Features is an array of features
+        //Features is an array of GeoJSON features
     })
     .catch((err) => 
     { 
-        
+		// Here the err object contains a messages field which is a list of messages encountered. The messages are more human readable but may not fit your localization
+		// Additionally the err object contains a type field. The type is an integer representaion of the error
+		// -1 - Unknown. Shouldnt get this. If you did something bad happened :)
+		// 0 - Unable to open the file provided. Sometimes its a permission issue.
+		// 1 - The buffer we got from the file was empty. I have only seen this one when I tried to pass an empty file
+		// 2 - The file was not able to be opened as a zip file. This can happen if the user doesnt select a zip file.
+		// 3 - The file was not able to be opened as a zip. This one can happen if the zip is corrupt.
+		// 10 - The zip file was opened but was missing one of the following files: shp, dbf, prj
+		// 11 -The zip file was opened but one or more features contained was an unrecognized type. Each feature must have a geometry of one of the following types
+		//		Point
+		//		MultiPoint
+		//		LineString
+		//		MultiLineString
+		//		Polygon
+		//		MultiPolygon.
+		// 100 - We tried and retried to process the file. We kept hitting errors and we gave up trying to handle this file
     });
 
 
@@ -126,3 +141,8 @@ flattenShapes(featureCollection).then(flattenedFeature =>
     });
 
 ```
+
+# Changelog
+- 0.0.3 - improved response from process shapefile so that it reports errors more cleanly
+- 0.0.2 - improved documentation, added flatten shapes
+- 0.0.1 - initial release. Added support for processing shapefiles

@@ -96,12 +96,12 @@ class workerHandler {
             case "uploadProcessed": {
                 console.log(this.uploadPromise);
                 console.log(e.data.features);
-                this.uploadPromise.resolve(e.data.features);
+                this.uploadPromise.resolve({ features: e.data.features, fileInfo: e.data.fileInfo });
             }; break;
 
             case "uploadError": {
                 console.error("Upload errored", e.data.error);
-                this.uploadPromise.reject(e.data.error);
+                this.uploadPromise.reject({ messages: e.data.error, type: e.data.errorType });
             }
 
             case "flattened": {

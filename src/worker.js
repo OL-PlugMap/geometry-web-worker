@@ -82,6 +82,10 @@ const processShapefileMsg = msg => {
         var file = msg.files[i];
 
         const reader = new FileReader();
+        const fileName = file.name;
+        const fileType = file.type;
+        const fileSize = file.size;
+
         reader.addEventListener(
           "load",
           evt => {
@@ -114,7 +118,7 @@ const processShapefileMsg = msg => {
                   }
                 }
                 
-                postMessage({ type: "uploadProcessed", features: res.map(a => a.feature)});
+                postMessage({ type: "uploadProcessed", features: res.map(a => a.feature), fileInfo: { name: fileName, type: fileType, size: fileSize } });
 
                 //close();
                 reader.abort();
@@ -122,64 +126,72 @@ const processShapefileMsg = msg => {
               },
               reason => {
                 maxTries --;
-                let msg = null; //reason.message;
+                let errorType = -1;
+                let msg = null;
                 var fatal = true;
+
                 switch (reason.message) {
+                  case "Failed to execute 'open' on 'XMLHttpRequest': Invalid URL":
+                    //shp.js causes this for whatever reason
+                    msg = [ 'Couldnt open file.' ]
+                    errorType = 0;
+                    fatal = false;
+                    break;
                   case "forgot to pass buffer":
+                    errorType = 1;
                     msg = [ "Could not open the file. Is it corrupt?" ] //"Shapefile reader needs a valid ArrayBuffer to read from.";
                     break;
-                  case "I don't know that shp type":
-                    msg = [`Tried to parse an invalid or unsupported shape type.`, `Please upload a shapefile with only features of the supported types:`, `Point, MultiPoint, LineString, MultiLineString, Polygon, or MultiPolygon.` ];
-                    break;
-                  case "no layers founds":
-                    msg = [`The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`];
-                    break;
                   case "Can't find end of central directory : is this a zip file ? If it is, see http://stuk.github.io/jszip/documentation/howto/read_zip.html":
+                    errorType = 2;
                     msg = [`This file does not look like a zip file or it is corrupt.`,  `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
                     break;
                   case "SyntaxError":
+                    errorType = 3;
                       msg = [`This file does not look like a zip file or it is corrupt.`,  `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
                       break;
-                  case "Failed to execute 'open' on 'XMLHttpRequest': Invalid URL":
-                    //shp.js causes this for whatever reason
-
-                    fatal = false;
+                  case "no layers founds":
+                    errorType = 10;
+                    msg = [`The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`];
+                    break;
+                  case "I don't know that shp type":
+                    errorType = 11;
+                    msg = [`Tried to parse an invalid or unsupported shape type.`, `Please upload a shapefile with only features of the supported types:`, `Point, MultiPoint, LineString, MultiLineString, Polygon, or MultiPolygon.` ];
                     break;
                   default:
-                    debugger;
                     msg = [`Unable to parse the file. Unknown Error.`, `Additional information: ` + reason.message ];
                     fatal = false;
                     break;
                 }
                 //TODO: Return the error to elm land here
                 if(maxTries == 0)
-                {  msg = [`Exceeded maximum number of errors while parsing this file.`, `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
+                { 
+                  errorType = 100; 
+                  msg = [`Exceeded maximum number of errors while parsing this file.`, `The uploaded file must be a zip file containing, at minimum, the following extensions:`, `shp, dbf, prj.`]
                   fatal = true;
                 }
 
                 //if(msg)
-                postMessage({ type: "uploadError", id: msg.id, error: msg || reason, fatal: fatal });
+                postMessage({ type: "uploadError", id: msg.id, error: msg || reason, errorType : errorType, fatal: fatal });
 
                 if(fatal)
                   reader.abort();
               }
             )
             .catch((error) => {
-              postMessage({ type: "uploadError", error: error, fatal: true });
+              postMessage({ type: "uploadError", error: [ error ], errorType: -1, fatal: true });
             })
               
             
           },
           err =>
           {
-            postMessage({ type: "uploadError", error: err, fatal: true });
+            postMessage({ type: "uploadError", error: [ err ], errorType: -1, fatal: true });
             reader.abort();
           }
         );
         
         postMessage({ type: "openingFile", id: msg.id });
         reader.readAsArrayBuffer(file);
-        //reader.readAsText(file);
       }
     }
     else
